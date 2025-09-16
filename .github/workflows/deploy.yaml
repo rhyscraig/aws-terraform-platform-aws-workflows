@@ -1,0 +1,41 @@
+name: Deploy AFT Accounts
+true:
+  workflow_dispatch:
+    inputs:
+      account_name:
+        description: Name of account to create
+        required: false
+        default: dev-test
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: eu-west-1
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.9.0
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_AVM_OIDC_ROLE_ARN }}
+        aws-region: eu-west-1
+    - run: terraform init -backend-config="bucket=avm-terraform-state" -backend-config="dynamodb_table=avm-terraform-locks"
+        -backend-config="region=${{ env.AWS_REGION }}" terraform/aft
+    - run: terraform validate terraform/aft
+    - run: terraform plan -input=false -var="requested_account_name=${{ github.event.inputs.account_name
+        || 'dev-test' }}" terraform/aft
+      if: github.event_name == 'pull_request'
+    - run: terraform apply -input=false -auto-approve -var="requested_account_name=${{
+        github.event.inputs.account_name || 'dev-test' }}" terraform/aft
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'

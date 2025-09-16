@@ -1,0 +1,1 @@
+output "status" { value = "COMPLETED" }
