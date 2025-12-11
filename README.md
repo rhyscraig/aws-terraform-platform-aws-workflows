@@ -1,58 +1,71 @@
-# AVM Accounts
+# aws-workflows: The Pipeline
 
-## Overview
-This repository contains Terraform **account blueprints, request pipelines, and provisioning hooks**. It consolidates:
-- `avm-account-baselines`
-- `avm-account-requests`
-- `avm-account-provisioning-hooks`
+This repository contains the centralized CI/CD logic for the Cloud Platform.
+All infrastructure repositories (`aws-org`, `aws-accounts`, `aws-baselines`) **MUST** consume these workflows.
 
----
+## Workflows
 
-## Contents
-- **Account Baselines**
-  - Terraform modules for new account baselines.
-- **Account Requests**
-  - Terraform modules for requesting new accounts.
-- **Provisioning Hooks**
-  - Pre-account creation validation logic.
+### 1. `reusable-tf-plan.yaml`
+* **Trigger:** Pull Requests.
+* **Responsibility:** The "Hard Gate".
+* **Actions:**
+    * Installs `tfctl` and `awsctl` (v2.2.0+).
+    * Authenticates via OIDC.
+    * Runs `tfctl check --mode=ci` (Hard Fail on security/linting violations).
+    * Runs `tfctl plan` and posts the output to the PR as a comment.
 
----
+### 2. `reusable-tf-apply.yaml`
+* **Trigger:** Merge to `main`.
+* **Responsibility:** Deployment.
+* **Actions:**
+    * Waits for GitHub Environment Approval (if configured in Repo Settings).
+    * Runs `tfctl apply`.
+    * Enforces Production Branch guardrails (via `tfctl`).
 
-## Inputs
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `baseline_template` | Terraform module for baseline accounts | `avm-account-baselines` |
-| `requested_account_name` | Name of account to create | `dev-test` |
-| `target_ou` | OU to place new account in | `Development` |
-| `github_oidc_roles` | Roles for pipeline authentication | From `avm-bootstrap` outputs |
+## Usage Example
 
----
+In your infrastructure repo (e.g., `aws-baselines/.github/workflows/deploy.yaml`):
 
-## Outputs
-| Output | Description |
-|--------|-------------|
-| `account_id` | AWS Account ID of newly created account |
-| `baseline_resources` | List of resources provisioned in baseline |
-| `provisioning_status` | Status of account creation checks |
+```yaml
+name: Deploy Baselines
 
----
+on:
+  push:
+    branches: [main]
+  pull_request:
 
-## Terraform AFT & Control Tower
-- **AFT definitions** live here:
-  - Account Factory pipelines (`aws_organizations_account`) or AFT modules.
-- **Control Tower itself is not deployed from this repo**, but AFT uses the foundational OU/landing zone from `avm-platform`.
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
 
----
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    # Reference the reusable workflow
+    uses: your-org/aws-workflows/.github/workflows/reusable-tf-plan.yaml@v1.0.0
+    with:
+      working-directory: ./terraform/networking
+      environment: dev
+    secrets:
+      OIDC_ROLE_ARN: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+      GH_PAT: ${{ secrets.GH_PAT }}
 
-## Deployment Order
-1. `avm-bootstrap` for OIDC and Terraform state.
-2. `avm-platform` for foundational infra.
-3. Deploy accounts via `avm-accounts`.
+  apply:
+    if: github.ref == 'refs/heads/main'
+    uses: your-org/aws-workflows/.github/workflows/reusable-tf-apply.yaml@v1.0.0
+    with:
+      working-directory: ./terraform/networking
+      # 'production' environment triggers manual approval if configured in GitHub
+      environment: production
+    secrets:
+      OIDC_ROLE_ARN: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+```
 
----
+# Setup Requirements
+* **Secrets**: The calling repository must have GH_PAT (Personal Access Token) available to clone the private tfctl/awsctl tools.
 
-## Notes
-- This repo consolidates multiple previously separate account-related repos for simplicity.
-- GitHub Actions is the only required CI/CD tool.
+* **OIDC**: The OIDC_ROLE_ARN must be trusted by the aws-workflows repository (or the calling repo, depending on AWS IAM trust policy configuration).
 
-Makings changes to force push.
+* **Runner**: Ubuntu Latest is assumed.

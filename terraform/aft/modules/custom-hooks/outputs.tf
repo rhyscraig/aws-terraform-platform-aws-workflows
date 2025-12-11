@@ -1,1 +1,0 @@
-output "status" { value = "COMPLETED" }
