@@ -10,13 +10,11 @@ on:
         required: false
         default: "eu-west-2"
         type: string
-      # The directory containing the .tfctl.yml file
       working-directory:
         required: false
         default: "."
         type: string
     secrets:
-      # We pass the role ARN from the caller to keep secrets decentralized
       OIDC_ROLE_ARN:
         required: true
       GH_PAT:
@@ -29,7 +27,7 @@ jobs:
     name: "Plan: ${{ inputs.env_name }}"
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # OIDC requirement
+      id-token: write
       contents: read
       pull-requests: write
 
@@ -37,7 +35,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. Identity: Exchange OIDC Token for AWS Creds
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -45,33 +42,28 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
           role-session-name: "GitHubActions-Plan"
 
-      # 2. Setup: Install Python & Tooling
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install Tooling (Private Repos)
+      - name: Install Tooling
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           pip install --upgrade pip
-          # Adjust the org name 'BT-IT-...' to your actual GitHub org
           pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
           pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
 
-      # 3. Execution: Run Plan (Fail-Closed)
       - name: Run tfctl Plan
         working-directory: ${{ inputs.working-directory }}
         env:
           CI: "true"
-          # Pass Infracost key if available
           INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
         run: |
           tfctl --env=${{ inputs.env_name }} plan
 
-      # 4. Artifacts: Save Plan for Apply Job
       - name: Upload TF Plan
         uses: actions/upload-artifact@v4
         with:
