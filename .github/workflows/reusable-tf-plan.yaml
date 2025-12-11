@@ -1,0 +1,74 @@
+name: "Reusable TF Plan"
+
+on:
+  workflow_call:
+    inputs:
+      env_name:
+        required: true
+        type: string
+      aws_region:
+        required: false
+        default: "eu-west-2"
+        type: string
+      working-directory:
+        required: false
+        default: "."
+        type: string
+    secrets:
+      OIDC_ROLE_ARN:
+        required: true
+      GH_PAT:
+        required: true
+      INFRACOST_API_KEY:
+        required: false
+
+jobs:
+  plan:
+    name: "Plan: ${{ inputs.env_name }}"
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+          role-session-name: "GitHubActions-Plan"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Tooling
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          pip install --upgrade pip
+          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
+          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
+
+      - name: Run tfctl Plan
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          CI: "true"
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+        run: |
+          tfctl --env=${{ inputs.env_name }} plan
+
+      - name: Upload TF Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ inputs.env_name }}
+          path: |
+            ${{ inputs.working-directory }}/tfplan
+            ${{ inputs.working-directory }}/.terraform.lock.hcl
+          retention-days: 1

@@ -1,0 +1,67 @@
+name: "Reusable TF Apply"
+
+on:
+  workflow_call:
+    inputs:
+      env_name:
+        required: true
+        type: string
+      aws_region:
+        required: false
+        default: "eu-west-2"
+        type: string
+      working-directory:
+        required: false
+        default: "."
+        type: string
+    secrets:
+      OIDC_ROLE_ARN:
+        required: true
+      GH_PAT:
+        required: true
+
+jobs:
+  apply:
+    name: "Apply: ${{ inputs.env_name }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env_name }}
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+          role-session-name: "GitHubActions-Apply"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Tooling
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          pip install --upgrade pip
+          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
+          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
+
+      - name: Download Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ inputs.env_name }}
+          path: ${{ inputs.working-directory }}
+
+      - name: Run tfctl Apply
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          CI: "true"
+        run: |
+          tfctl --env=${{ inputs.env_name }} apply
