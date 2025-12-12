@@ -5,19 +5,22 @@ on:
     branches: [ main ]
     paths:
       - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   lint:
     name: Lint & Static Analysis
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Run Actionlint
-        # Static analysis for GitHub Actions (catches syntax errors, deprecated fields, etc.)
         uses: reviewdog/action-actionlint@v1
         with:
           fail_on_error: true
-          # We disable shellcheck for embedded run scripts as they are often templated
+          # SC2086: Ignore unquoted variable expansion warnings common in Actions
           actionlint_flags: "-ignore 'SC2086'"
