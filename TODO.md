@@ -1,4 +1,16 @@
-# To Do
+# TODO — ws-workflows
 
-## 🛡️ Security
-1.  **Semantic Release** - Create our own "in-house" github action
+## Security
+- [ ] Pin all third-party actions by SHA
+- [ ] Add automated action-version drift detection
+
+## Consistency
+- [ ] Enforce `.yaml` extension only
+- [ ] Add yamllint config
+
+## DX Improvements
+- [ ] Add workflow visual diagram
+- [ ] Add “minimal caller repo” template
+
+## Platform Hardening
+- [ ] Add policy check to block `terraform destroy` unless explicitly allowed

@@ -8,6 +8,9 @@ on:
 
 permissions:
   contents: write
+  id-token: none
+  actions: none
+  checks: none
 
 jobs:
   release:
@@ -16,7 +19,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
+        with: 
           fetch-depth: 0
 
       # 1. Calculate Next Version & Push Tag

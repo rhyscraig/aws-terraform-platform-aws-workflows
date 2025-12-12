@@ -7,18 +7,19 @@ on:
         required: false
         default: "."
         type: string
-      tflint-version:
-        required: false
-        default: "latest"
-        type: string
+    secrets:
+      GH_PAT:
+        required: false 
 
-# [DEFENSE] No permissions required for static analysis
 permissions:
   contents: read
+  id-token: none
+  actions: none
+  checks: none
 
 jobs:
   validate:
-    name: Lint & Scan
+    name: "Tfctl Doctor & Security"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -27,27 +28,24 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Format Check
-        working-directory: ${{ inputs.working-directory }}
-        run: terraform fmt -check -recursive
-
-      - name: Install TFLint
-        uses: terraform-linters/setup-tflint@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          tflint_version: ${{ inputs.tflint-version }}
+          python-version: '3.11'
 
-      - name: Run TFLint
-        working-directory: ${{ inputs.working-directory }}
+      - name: Install Tools
+        # We need tfctl to run 'doctor'
+        # We need checkov for security scans
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          tflint --init
-          tflint -f compact
+          pip install --upgrade pip
+          pip install checkov
+          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
+          # awsctl is required by tfctl doctor dependency checks
+          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
 
-      - name: Checkov Security Scan
-        uses: bridgecrewio/checkov-action@master
-        with:
-          directory: ${{ inputs.working-directory }}
-          framework: terraform
-          soft_fail: false  # Hard block on security violations
-          quiet: true
-          # [DEFENSE] Run in offline mode if possible, or pin version
-          download_external_modules: true
+      - name: Run Tfctl Doctor
+        # This runs 'terraform validate' and 'terraform fmt' safely
+        working-directory: ${{ inputs.working-directory }}
+        run: tfctl doctor

@@ -8,6 +8,18 @@ All infrastructure repositories (`aws-org`, `aws-accounts`, `aws-baselines`) **M
 
 ---
 
+## Architecture Flow
+
+Caller Repo
+   ↓
+reusable-static-analysis
+   ↓
+reusable-tf-plan
+   ↓
+reusable-tf-apply
+
+---
+
 ## 🛡️ Security & Guardrails
 
 These workflows enforce the **Defense-Grade** standard:
@@ -15,6 +27,20 @@ These workflows enforce the **Defense-Grade** standard:
 2.  **OIDC Authentication:** No long-lived AWS keys are ever stored in GitHub Secrets.
 3.  **Immutable Actions:** All 3rd-party actions are pinned by SHA hash or stable major version tags.
 4.  **Least Privilege:** Token permissions are scoped strictly to the job requirements.
+
+---
+
+## Golden Path Workflow
+
+```yaml
+jobs:
+  lint:
+    uses: org/ws-workflows/.github/workflows/reusable-static-analysis.yaml@v1
+
+  plan:
+    needs: lint
+    uses: org/ws-workflows/.github/workflows/reusable-tf-plan.yaml@v1
+```
 
 ---
 
@@ -98,3 +124,9 @@ To use these workflows, the calling repository must have:
 `id-token`: write (For OIDC).
 
 `contents`: read (For checkout).
+
+
+### Non-Goals
+- Not a general-purpose CI library
+- Not intended for non-Terraform workloads
+- Not compatible with static AWS credentials

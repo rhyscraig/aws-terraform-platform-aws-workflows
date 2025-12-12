@@ -39,6 +39,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      actions: none
+      checks: none
+      
 
     steps:
       - name: Checkout Code
@@ -49,12 +52,22 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install tfctl & awsctl
+      - name: Install Tools
+        # We need tfctl to run 'doctor'
+        # We need checkov for security scans
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          pipx install "git+https://${GH_TOKEN}@github.com/${{ github.repository_owner }}/tfctl.git@${{ inputs.tfctl-version }}"
-          pipx install "git+https://${GH_TOKEN}@github.com/${{ github.repository_owner }}/awsctl.git@${{ inputs.tfctl-version }}"
+          pip install --upgrade pip
+          pip install checkov
+          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
+          # awsctl is required by tfctl doctor dependency checks
+          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
+
+      - name: Run Tfctl Doctor
+        # This runs 'terraform validate' and 'terraform fmt' safely
+        working-directory: ${{ inputs.working-directory }}
+        run: tfctl doctor
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v5

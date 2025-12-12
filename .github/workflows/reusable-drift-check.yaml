@@ -21,9 +21,10 @@ jobs:
     name: Detect Drift
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: read
-      issues: write # To alert on drift
+      id-token: write
+      actions: none
+      checks: none
 
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +35,7 @@ jobs:
           role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
 
-      - name: Set up Python & Tools
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -43,13 +44,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
+          pip install --upgrade pip
           pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
 
-      - name: Check for Drift
+      - name: Run Drift Check
         env:
           CI: "true"
         run: |
-          # tfctl plan returns 0 for no changes, 2 for changes (drift), 1 for error
+          # tfctl passes '-detailed-exitcode' to terraform.
+          # Exit Code 2 indicates changes (drift).
+          # Exit Code 0 indicates no changes.
+          # Exit Code 1 indicates error.
+          
           set +e
           tfctl --env=${{ inputs.env_name }} plan -detailed-exitcode
           EXIT_CODE=$?
