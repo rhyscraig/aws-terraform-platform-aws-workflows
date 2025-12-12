@@ -1,0 +1,32 @@
+# AWS/aws-workflows/.github/workflows/release.yaml
+name: Release Workflows
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      # Only release a new version if the actual workflow logic changes
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          # Fetch depth 0 is required for the tag action to calculate history
+          fetch-depth: 0
+
+      - name: Bump Version and Push Tag
+        uses: anothrNick/github-tag-action@1.67.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WITH_V: true
+          # Default to a patch release (v0.0.x) if no specific keyword is found
+          DEFAULT_BUMP: patch

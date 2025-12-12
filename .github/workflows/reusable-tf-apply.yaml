@@ -8,12 +8,18 @@ on:
         type: string
       aws_region:
         required: false
-        default: "eu-west-2"
+        default: "us-east-1"
         type: string
       working-directory:
         required: false
         default: "."
         type: string
+      # [NEW] Define the input so the caller can pass it
+      pre_plan_script:
+        description: "Path to a script to run before apply (re-generation)"
+        required: false
+        type: string
+        default: ""
     secrets:
       OIDC_ROLE_ARN:
         required: true
@@ -58,6 +64,15 @@ jobs:
         with:
           name: tfplan-${{ inputs.env_name }}
           path: ${{ inputs.working-directory }}
+
+      # [NEW] Execute the hook
+      - name: Run Pre-Apply Script
+        if: inputs.pre_plan_script != ''
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "🪝 Running Pre-Apply Hook: ${{ inputs.pre_plan_script }}"
+          chmod +x ${{ inputs.pre_plan_script }}
+          ${{ inputs.pre_plan_script }}
 
       - name: Run tfctl Apply
         working-directory: ${{ inputs.working-directory }}

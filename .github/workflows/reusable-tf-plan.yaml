@@ -8,12 +8,18 @@ on:
         type: string
       aws_region:
         required: false
-        default: "eu-west-2"
+        default: "us-east-1"
         type: string
       working-directory:
         required: false
         default: "."
         type: string
+      # [NEW] Define the input so the caller can pass it
+      pre_plan_script:
+        description: "Path to a script to run before terraform plan (e.g. for imports)"
+        required: false
+        type: string
+        default: ""
     secrets:
       OIDC_ROLE_ARN:
         required: true
@@ -56,6 +62,15 @@ jobs:
           pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
           pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
 
+      # [NEW] Execute the hook
+      - name: Run Pre-Plan Script
+        if: inputs.pre_plan_script != ''
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "🪝 Running Pre-Plan Hook: ${{ inputs.pre_plan_script }}"
+          chmod +x ${{ inputs.pre_plan_script }}
+          ${{ inputs.pre_plan_script }}
+
       - name: Run tfctl Plan
         working-directory: ${{ inputs.working-directory }}
         env:
@@ -71,4 +86,5 @@ jobs:
           path: |
             ${{ inputs.working-directory }}/tfplan
             ${{ inputs.working-directory }}/.terraform.lock.hcl
+            ${{ inputs.working-directory }}/generated_imports.tf
           retention-days: 1

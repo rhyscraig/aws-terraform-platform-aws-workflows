@@ -10,7 +10,7 @@ on:
       aws-region:
         description: "AWS Region"
         required: false
-        default: "eu-west-2"
+        default: "us-east-1"
         type: string
       tfctl-version:
         description: "Tag of tfctl to use"
