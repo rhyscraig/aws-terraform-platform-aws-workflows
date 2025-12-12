@@ -1,0 +1,53 @@
+name: "Reusable Static Analysis"
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        required: false
+        default: "."
+        type: string
+      tflint-version:
+        required: false
+        default: "latest"
+        type: string
+
+# [DEFENSE] No permissions required for static analysis
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint & Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Format Check
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform fmt -check -recursive
+
+      - name: Install TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: ${{ inputs.tflint-version }}
+
+      - name: Run TFLint
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          tflint --init
+          tflint -f compact
+
+      - name: Checkov Security Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: ${{ inputs.working-directory }}
+          framework: terraform
+          soft_fail: false  # Hard block on security violations
+          quiet: true
+          # [DEFENSE] Run in offline mode if possible, or pin version
+          download_external_modules: true
