@@ -10,13 +10,15 @@ All infrastructure repositories (`aws-org`, `aws-accounts`, `aws-baselines`) **M
 
 ## Architecture Flow
 
-Caller Repo
-   ↓
+```text
+Caller Repository
+        ↓
 reusable-static-analysis
-   ↓
+        ↓
 reusable-tf-plan
-   ↓
+        ↓
 reusable-tf-apply
+```
 
 ---
 
