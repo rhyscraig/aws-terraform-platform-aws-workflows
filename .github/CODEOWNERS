@@ -1,0 +1,10 @@
+# -----------------------------------------------------------------------------
+# [FUTURE DEFENSE GRADE REQUIREMENT]
+# CURRENT STATUS: DISABLED (Sole Developer / Initial Rollout)
+# -----------------------------------------------------------------------------
+# Once the team expands, uncomment the lines below to enforce mandatory
+# reviews on all Pull Requests.
+# -----------------------------------------------------------------------------
+
+# * @BT-IT-Infrastructure-CloudOps/platform-engineers
+# .github/ @BT-IT-Infrastructure-CloudOps/security-approvers

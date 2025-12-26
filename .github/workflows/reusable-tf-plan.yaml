@@ -1,101 +1,58 @@
-name: "Reusable TF Plan"
+name: "Reusable TFCTL Plan"
 
 on:
   workflow_call:
     inputs:
-      env_name:
-        required: true
-        type: string
-      aws_region:
-        required: false
-        default: "us-east-1"
-        type: string
       working-directory:
-        required: false
-        default: "."
-        type: string
-      # [NEW] Define the input so the caller can pass it
-      pre_plan_script:
-        description: "Path to a script to run before terraform plan (e.g. for imports)"
-        required: false
-        type: string
-        default: ""
-    secrets:
-      OIDC_ROLE_ARN:
         required: true
+        type: string
+      environment:
+        required: true
+        type: string
+    secrets:
       GH_PAT:
         required: true
-      INFRACOST_API_KEY:
-        required: false
+      AWS_ROLE_ARN:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   plan:
-    name: "Plan: ${{ inputs.env_name }}"
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-      pull-requests: write
-      actions: none
-      checks: none
-
+    environment: ${{ inputs.environment }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
-          role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
-          aws-region: ${{ inputs.aws_region }}
-          role-session-name: "GitHubActions-Plan"
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Setup Tools (Python/TF)
+        uses: hashicorp/setup-terraform@a1502cd9e758c50496cc9ac5308c4843bcd56d36 # v3.0.0
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          terraform_wrapper: false
 
-      - name: Install Tools
-        # We need tfctl to run 'doctor'
-        # We need checkov for security scans
+      - name: Install Tfctl
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           pip install --upgrade pip
-          pip install checkov
           pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
-          # awsctl is required by tfctl doctor dependency checks
-          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
 
-      - name: Run Tfctl Doctor
-        # This runs 'terraform validate' and 'terraform fmt' safely
+      - name: Run TFCTL Plan
         working-directory: ${{ inputs.working-directory }}
-        run: tfctl doctor
+        # TFCTL handles init, workspace selection, and plan generation
+        run: tfctl plan --out tfplan.binary
 
-      # [NEW] Execute the hook
-      - name: Run Pre-Plan Script
-        if: inputs.pre_plan_script != ''
-        working-directory: ${{ inputs.working-directory }}
-        run: |
-          echo "🪝 Running Pre-Plan Hook: ${{ inputs.pre_plan_script }}"
-          chmod +x ${{ inputs.pre_plan_script }}
-          ${{ inputs.pre_plan_script }}
-
-      - name: Run tfctl Plan
-        working-directory: ${{ inputs.working-directory }}
-        env:
-          CI: "true"
-          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
-        run: |
-          tfctl --env=${{ inputs.env_name }} plan
-
-      - name: Upload TF Plan
-        uses: actions/upload-artifact@v5
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
         with:
-          name: tfplan-${{ inputs.env_name }}
-          path: |
-            ${{ inputs.working-directory }}/tfplan
-            ${{ inputs.working-directory }}/.terraform.lock.hcl
-            ${{ inputs.working-directory }}/generated_imports.tf
+          name: tfplan-${{ inputs.environment }}
+          path: ${{ inputs.working-directory }}/tfplan.binary
           retention-days: 1

@@ -1,0 +1,23 @@
+name: SLSA Provenance Generation
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        required: true
+        type: string
+      artifact-sha256:
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  id-token: write
+  contents: write
+
+jobs:
+  provenance:
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@93453723023e1074122e70c5e7b282924376518b
+    with:
+      base64-subjects: "${{ inputs.artifact-sha256 }} ${{ inputs.artifact-name }}"
+      upload-assets: true

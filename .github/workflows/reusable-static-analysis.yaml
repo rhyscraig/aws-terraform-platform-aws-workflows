@@ -9,43 +9,46 @@ on:
         type: string
     secrets:
       GH_PAT:
-        required: false 
+        required: true
 
 permissions:
   contents: read
-  id-token: none
-  actions: none
-  checks: none
 
 jobs:
   validate:
     name: "Tfctl Doctor & Security"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout Consumer Code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Checkout Central Policies
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          repository: BT-IT-Infrastructure-CloudOps/aws-workflows
+          path: _central_policies
+          sparse-checkout: |
+            policies
+          token: ${{ secrets.GH_PAT }}
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@a1502cd9e758c50496cc9ac5308c4843bcd56d36 # v3.0.0
+        with:
+          terraform_wrapper: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
         with:
           python-version: '3.11'
 
-      - name: Install Tools
-        # We need tfctl to run 'doctor'
-        # We need checkov for security scans
+      - name: Install Tfctl
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           pip install --upgrade pip
-          pip install checkov
           pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
-          # awsctl is required by tfctl doctor dependency checks
-          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
 
-      - name: Run Tfctl Doctor
-        # This runs 'terraform validate' and 'terraform fmt' safely
+      - name: Run Doctor
         working-directory: ${{ inputs.working-directory }}
-        run: tfctl doctor
+        # Point tfctl to the downloaded central policies
+        run: tfctl doctor --policy-path $GITHUB_WORKSPACE/_central_policies/policies

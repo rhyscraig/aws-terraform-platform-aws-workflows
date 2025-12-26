@@ -1,93 +1,52 @@
-name: "Reusable TF Apply"
+name: "Reusable TFCTL Apply"
 
 on:
   workflow_call:
     inputs:
-      env_name:
-        required: true
-        type: string
-      aws_region:
-        required: false
-        default: "us-east-1"
-        type: string
       working-directory:
-        required: false
-        default: "."
-        type: string
-      # [NEW] Define the input so the caller can pass it
-      pre_plan_script:
-        description: "Path to a script to run before apply (re-generation)"
-        required: false
-        type: string
-        default: ""
-    secrets:
-      OIDC_ROLE_ARN:
         required: true
+        type: string
+      environment:
+        required: true
+        type: string
+    secrets:
       GH_PAT:
         required: true
+      AWS_ROLE_ARN:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   apply:
-    name: "Apply: ${{ inputs.env_name }}"
     runs-on: ubuntu-latest
-    environment: ${{ inputs.env_name }}
-    permissions:
-      id-token: write
-      contents: read
-      actions: none
-      checks: none
-
+    environment: ${{ inputs.environment }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v6
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
-          aws-region: ${{ inputs.aws_region }}
-          role-session-name: "GitHubActions-Apply"
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-
-      - name: Install Tools
-        # We need tfctl to run 'doctor'
-        # We need checkov for security scans
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-        run: |
-          pip install --upgrade pip
-          pip install checkov
-          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
-          # awsctl is required by tfctl doctor dependency checks
-          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
-
-      - name: Run Tfctl Doctor
-        # This runs 'terraform validate' and 'terraform fmt' safely
-        working-directory: ${{ inputs.working-directory }}
-        run: tfctl doctor
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Download Plan
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@c850b930e6ba138125429b7e5c93fc707a7f8427 # v4.1.4
         with:
-          name: tfplan-${{ inputs.env_name }}
+          name: tfplan-${{ inputs.environment }}
           path: ${{ inputs.working-directory }}
 
-      # [NEW] Execute the hook
-      - name: Run Pre-Apply Script
-        if: inputs.pre_plan_script != ''
-        working-directory: ${{ inputs.working-directory }}
-        run: |
-          echo "🪝 Running Pre-Apply Hook: ${{ inputs.pre_plan_script }}"
-          chmod +x ${{ inputs.pre_plan_script }}
-          ${{ inputs.pre_plan_script }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
 
-      - name: Run tfctl Apply
-        working-directory: ${{ inputs.working-directory }}
+      - name: Install Tfctl
         env:
-          CI: "true"
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          tfctl --env=${{ inputs.env_name }} apply
+          pip install --upgrade pip
+          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
+
+      - name: Run TFCTL Apply
+        working-directory: ${{ inputs.working-directory }}
+        # TFCTL enforces that the plan matches the state before applying
+        run: tfctl apply --plan tfplan.binary
