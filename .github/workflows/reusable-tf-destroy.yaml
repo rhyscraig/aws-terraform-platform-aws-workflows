@@ -41,7 +41,7 @@ jobs:
       contents: read
       actions: none
       checks: none
-      
+
 
     steps:
       - name: Checkout Code
@@ -60,9 +60,9 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install checkov
-          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
+          pip install "git+https://${GH_TOKEN}@github.com/rhyscraig/tfctl.git@main"
           # awsctl is required by tfctl doctor dependency checks
-          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/awsctl.git@main"
+          pip install "git+https://${GH_TOKEN}@github.com/rhyscraig/awsctl.git@main"
 
       - name: Run Tfctl Doctor
         # This runs 'terraform validate' and 'terraform fmt' safely

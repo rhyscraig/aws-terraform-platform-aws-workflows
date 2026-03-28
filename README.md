@@ -56,7 +56,7 @@ jobs:
 ```yaml
 jobs:
   lint:
-    uses: BT-IT-Infrastructure-CloudOps/aws-workflows/.github/workflows/reusable-static-analysis.yaml@v0.0.2
+    uses: hoad-org/aws-workflows/.github/workflows/reusable-static-analysis.yaml@v0.0.2
     with:
       working-directory: "."
 ```
@@ -72,7 +72,7 @@ jobs:
 jobs:
   plan:
     needs: lint
-    uses: BT-IT-Infrastructure-CloudOps/aws-workflows/.github/workflows/reusable-tf-plan.yaml@v0.0.2
+    uses: hoad-org/aws-workflows/.github/workflows/reusable-tf-plan.yaml@v0.0.2
     with:
       env_name: "prod"
     secrets:
@@ -97,7 +97,7 @@ on:
     - cron: '0 8 * * *' # Daily at 8am
 jobs:
   drift:
-    uses: BT-IT-Infrastructure-CloudOps/aws-workflows/.github/workflows/reusable-drift-check.yaml@v0.0.2
+    uses: hoad-org/aws-workflows/.github/workflows/reusable-drift-check.yaml@v0.0.2
     with:
       env_name: "prod"
 ```

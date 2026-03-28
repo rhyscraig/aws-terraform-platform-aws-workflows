@@ -43,7 +43,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           pip install --upgrade pip
-          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
+          pip install "git+https://${GH_TOKEN}@github.com/rhyscraig/tfctl.git@main"
 
       - name: Run TFCTL Plan
         working-directory: ${{ inputs.working-directory }}

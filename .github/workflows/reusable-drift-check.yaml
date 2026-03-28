@@ -39,13 +39,13 @@ jobs:
         uses: actions/setup-python@v6.1.0
         with:
           python-version: '3.11'
-      
+
       - name: Install tfctl
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           pip install --upgrade pip
-          pip install "git+https://${GH_TOKEN}@github.com/BT-IT-Infrastructure-CloudOps/tfctl.git@main"
+          pip install "git+https://${GH_TOKEN}@github.com/rhyscraig/tfctl.git@main"
 
       - name: Run Drift Check
         env:
@@ -55,12 +55,12 @@ jobs:
           # Exit Code 2 indicates changes (drift).
           # Exit Code 0 indicates no changes.
           # Exit Code 1 indicates error.
-          
+
           set +e
           tfctl --env=${{ inputs.env_name }} plan -detailed-exitcode
           EXIT_CODE=$?
           set -e
-          
+
           if [ $EXIT_CODE -eq 2 ]; then
             echo "::error::DRIFT DETECTED! Infrastructure does not match Code."
             exit 1
