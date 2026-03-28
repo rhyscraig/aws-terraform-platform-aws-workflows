@@ -1,0 +1,112 @@
+name: "Reusable Terraform Drift Detection"
+
+on:
+  workflow_call:
+    inputs:
+      tf_dir:
+        description: "Path to the Terraform directory (relative to repo root)"
+        required: false
+        default: "terraform"
+        type: string
+      org:
+        description: "Organisation slug (e.g. hoadorg, terrorgem)"
+        required: true
+        type: string
+      env:
+        description: "Environment slug (e.g. mgmt, prd, dev)"
+        required: true
+        type: string
+      state_key_suffix:
+        description: "State key path suffix appended to platform/<org>/<env>/"
+        required: false
+        default: "terraform.tfstate"
+        type: string
+      aws_region:
+        description: "AWS region to deploy into"
+        required: false
+        default: "eu-west-2"
+        type: string
+      github_environment:
+        description: "GitHub Environment name (controls OIDC and secrets scope)"
+        required: false
+        default: ""
+        type: string
+    secrets:
+      SEED_ROLE_ARN:
+        description: "OIDC role ARN in the management/seed account"
+        required: true
+      TF_STATE_BUCKET:
+        description: "S3 bucket name for Terraform state"
+        required: true
+      KMS_KEY_ID:
+        description: "KMS key ID/ARN for state bucket encryption"
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  drift:
+    name: "Drift Detection"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    env:
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      KMS_KEY_ID: ${{ secrets.KMS_KEY_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.SEED_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.10"
+
+      - name: Terraform Init
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          terraform -chdir=${{ inputs.tf_dir }} init \
+            -input=false \
+            -lockfile=readonly \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=platform/${{ inputs.org }}/${{ inputs.env }}/${{ inputs.state_key_suffix }}" \
+            -backend-config="region=${{ inputs.aws_region }}" \
+            -backend-config="kms_key_id=${KMS_KEY_ID}" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Plan (drift check)
+        id: plan
+        run: |
+          # -detailed-exitcode: 0=no changes, 1=error, 2=changes detected (drift)
+          EXTRA_VARS=""
+          if [ -f "configs/orgs/${{ inputs.org }}.tfvars" ]; then
+            EXTRA_VARS="${EXTRA_VARS} -var-file=../../configs/orgs/${{ inputs.org }}.tfvars"
+          fi
+          if [ -f "configs/envs/${{ inputs.env }}.tfvars" ]; then
+            EXTRA_VARS="${EXTRA_VARS} -var-file=../../configs/envs/${{ inputs.env }}.tfvars"
+          fi
+
+          set +e
+          terraform -chdir=${{ inputs.tf_dir }} plan \
+            ${EXTRA_VARS} \
+            -input=false \
+            -detailed-exitcode
+          EXIT_CODE=$?
+          set -e
+
+          if [ "${EXIT_CODE}" -eq 2 ]; then
+            echo "::error::DRIFT DETECTED: infrastructure does not match code for ${{ inputs.org }}/${{ inputs.env }}"
+            exit 1
+          elif [ "${EXIT_CODE}" -ne 0 ]; then
+            echo "::error::Terraform plan failed for ${{ inputs.org }}/${{ inputs.env }}"
+            exit 1
+          fi
+          echo "No drift detected for ${{ inputs.org }}/${{ inputs.env }}"

@@ -1,0 +1,115 @@
+name: "Reusable Terraform Apply"
+
+on:
+  workflow_call:
+    inputs:
+      tf_dir:
+        description: "Path to the Terraform directory (relative to repo root)"
+        required: false
+        default: "terraform"
+        type: string
+      org:
+        description: "Organisation slug (e.g. hoadorg, terrorgem)"
+        required: true
+        type: string
+      env:
+        description: "Environment slug (e.g. mgmt, prd, dev)"
+        required: true
+        type: string
+      state_key_suffix:
+        description: "State key path suffix appended to platform/<org>/<env>/"
+        required: false
+        default: "terraform.tfstate"
+        type: string
+      aws_region:
+        description: "AWS region to deploy into"
+        required: false
+        default: "eu-west-2"
+        type: string
+      plan_s3_key:
+        description: "S3 key of the encrypted plan file (output from the plan job)"
+        required: true
+        type: string
+      github_environment:
+        description: "GitHub Environment name (controls OIDC and secrets scope)"
+        required: false
+        default: ""
+        type: string
+    secrets:
+      SEED_ROLE_ARN:
+        description: "OIDC role ARN in the management/seed account"
+        required: true
+      TF_STATE_BUCKET:
+        description: "S3 bucket name for Terraform state"
+        required: true
+      KMS_KEY_ID:
+        description: "KMS key ID/ARN for state bucket encryption"
+        required: true
+      TF_LOGS_BUCKET:
+        description: "S3 bucket for storing encrypted plan files"
+        required: true
+      PLAN_PASSPHRASE:
+        description: "Passphrase used to AES-encrypt the plan before uploading to S3"
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  apply:
+    name: "Terraform Apply"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    env:
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      KMS_KEY_ID: ${{ secrets.KMS_KEY_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.SEED_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.10"
+
+      - name: Terraform Init
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          terraform -chdir=${{ inputs.tf_dir }} init \
+            -input=false \
+            -lockfile=readonly \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=platform/${{ inputs.org }}/${{ inputs.env }}/${{ inputs.state_key_suffix }}" \
+            -backend-config="region=${{ inputs.aws_region }}" \
+            -backend-config="kms_key_id=${KMS_KEY_ID}" \
+            -backend-config="encrypt=true"
+
+      - name: Download and decrypt plan
+        run: |
+          aws s3 cp \
+            "s3://${{ secrets.TF_LOGS_BUCKET }}/${{ inputs.plan_s3_key }}" \
+            tfplan.enc
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 \
+            -pass pass:"${{ secrets.PLAN_PASSPHRASE }}" \
+            -in tfplan.enc \
+            -out "${{ inputs.tf_dir }}/tfplan"
+          echo "Plan decrypted"
+
+      - name: Terraform Apply
+        run: |
+          terraform -chdir=${{ inputs.tf_dir }} apply -input=false tfplan
+
+      - name: Clean up plan artifact
+        if: always()
+        run: |
+          aws s3 rm \
+            "s3://${{ secrets.TF_LOGS_BUCKET }}/${{ inputs.plan_s3_key }}" \
+            || echo "Could not delete plan artifact (non-fatal)"

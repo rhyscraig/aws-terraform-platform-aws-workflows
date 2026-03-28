@@ -1,0 +1,121 @@
+name: "Reusable Terraform Plan"
+
+on:
+  workflow_call:
+    inputs:
+      tf_dir:
+        description: "Path to the Terraform directory (relative to repo root)"
+        required: false
+        default: "terraform"
+        type: string
+      org:
+        description: "Organisation slug (e.g. hoadorg, terrorgem)"
+        required: true
+        type: string
+      env:
+        description: "Environment slug (e.g. mgmt, prd, dev)"
+        required: true
+        type: string
+      state_key_suffix:
+        description: "State key path suffix appended to platform/<org>/<env>/"
+        required: false
+        default: "terraform.tfstate"
+        type: string
+      aws_region:
+        description: "AWS region to deploy into"
+        required: false
+        default: "eu-west-2"
+        type: string
+      github_environment:
+        description: "GitHub Environment name (controls OIDC and secrets scope)"
+        required: false
+        default: ""
+        type: string
+    secrets:
+      SEED_ROLE_ARN:
+        description: "OIDC role ARN in the management/seed account"
+        required: true
+      TF_STATE_BUCKET:
+        description: "S3 bucket name for Terraform state"
+        required: true
+      KMS_KEY_ID:
+        description: "KMS key ID/ARN for state bucket encryption"
+        required: true
+      TF_LOGS_BUCKET:
+        description: "S3 bucket for storing encrypted plan files"
+        required: true
+      PLAN_PASSPHRASE:
+        description: "Passphrase used to AES-encrypt the plan before uploading to S3"
+        required: true
+    outputs:
+      plan_s3_key:
+        description: "S3 key of the encrypted plan file"
+        value: ${{ jobs.plan.outputs.plan_s3_key }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  plan:
+    name: "Terraform Plan"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    env:
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      KMS_KEY_ID: ${{ secrets.KMS_KEY_ID }}
+    outputs:
+      plan_s3_key: ${{ steps.upload-plan.outputs.plan_s3_key }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.SEED_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.10"
+
+      - name: Terraform Init
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          terraform -chdir=${{ inputs.tf_dir }} init \
+            -input=false \
+            -lockfile=readonly \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=platform/${{ inputs.org }}/${{ inputs.env }}/${{ inputs.state_key_suffix }}" \
+            -backend-config="region=${{ inputs.aws_region }}" \
+            -backend-config="kms_key_id=${KMS_KEY_ID}" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Plan
+        run: |
+          EXTRA_VARS=""
+          if [ -f "configs/orgs/${{ inputs.org }}.tfvars" ]; then
+            EXTRA_VARS="${EXTRA_VARS} -var-file=../../configs/orgs/${{ inputs.org }}.tfvars"
+          fi
+          if [ -f "configs/envs/${{ inputs.env }}.tfvars" ]; then
+            EXTRA_VARS="${EXTRA_VARS} -var-file=../../configs/envs/${{ inputs.env }}.tfvars"
+          fi
+          terraform -chdir=${{ inputs.tf_dir }} plan \
+            ${EXTRA_VARS} \
+            -input=false \
+            -out=tfplan
+
+      - name: Encrypt and upload plan to S3
+        id: upload-plan
+        run: |
+          PLAN_KEY="${{ inputs.org }}/${{ inputs.env }}/plans/tfplan-${{ github.sha }}-${{ github.run_id }}.enc"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 100000 \
+            -pass pass:"${{ secrets.PLAN_PASSPHRASE }}" \
+            -in "${{ inputs.tf_dir }}/tfplan" \
+            -out tfplan.enc
+          aws s3 cp tfplan.enc "s3://${{ secrets.TF_LOGS_BUCKET }}/${PLAN_KEY}"
+          echo "plan_s3_key=${PLAN_KEY}" >> "$GITHUB_OUTPUT"
+          echo "Plan uploaded to s3://${{ secrets.TF_LOGS_BUCKET }}/${PLAN_KEY}"
