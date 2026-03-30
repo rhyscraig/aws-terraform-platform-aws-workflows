@@ -1,0 +1,43 @@
+name: "Reusable Static Analysis"
+
+on:
+  workflow_call:
+    inputs:
+      tf_dir:
+        description: "Path to the Terraform directory (relative to repo root)"
+        required: false
+        default: "."
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: "Lint & Security"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.10"
+
+      - name: Terraform Format Check
+        run: terraform -chdir=${{ inputs.tf_dir }} fmt -check -recursive
+
+      - name: Terraform Validate (syntax only)
+        run: |
+          terraform -chdir=${{ inputs.tf_dir }} init -backend=false
+          terraform -chdir=${{ inputs.tf_dir }} validate
+
+      - name: Checkov Security Scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: ${{ inputs.tf_dir }}
+          framework: terraform
+          soft_fail: true
+          quiet: true
+          skip_check: CKV_AWS_144,CKV_AWS_145
