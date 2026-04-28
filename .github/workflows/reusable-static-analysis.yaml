@@ -1,0 +1,62 @@
+name: "Reusable Static Analysis"
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        required: false
+        default: "."
+        type: string
+    secrets:
+      GH_PAT:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: "Tfctl Doctor & Security"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Consumer Code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Checkout Central Policies
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          repository: rhyscraig/aws-terraform-platform-aws-workflows
+          path: _central_policies
+          sparse-checkout: |
+            policies
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.11'
+
+      - name: Install Tfctl
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          pip install --upgrade pip
+          pip install "git+https://${GH_TOKEN}@github.com/rhyscraig/tfctl.git@v2.2.0"
+
+      - name: Run Doctor
+        working-directory: ${{ inputs.working-directory }}
+        # Point tfctl to the downloaded central policies
+        run: tfctl doctor --policy-path $GITHUB_WORKSPACE/_central_policies/policies
+
+      - name: Checkov IaC Security Scan
+        uses: bridgecrewio/checkov-action@63b8dc5e5afe7c6eb5a0dcaf2a85d07e1e1e2e54 # v12
+        with:
+          directory: ${{ inputs.working-directory }}
+          soft_fail: false
+          output_format: cli
+          download_external_modules: false

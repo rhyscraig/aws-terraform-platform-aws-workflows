@@ -1,0 +1,52 @@
+name: "Reusable TFCTL Apply"
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+    secrets:
+      GH_PAT:
+        required: true
+      AWS_ROLE_ARN:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Download Plan
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: ${{ inputs.working-directory }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@d4695650384537945e0b565ee73a714d361bcb04 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-2
+
+      - name: Install Tfctl
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          pip install --upgrade pip
+          pip install "git+https://${GH_TOKEN}@github.com/rhyscraig/tfctl.git@v2.2.0"
+
+      - name: Run TFCTL Apply
+        working-directory: ${{ inputs.working-directory }}
+        # TFCTL enforces that the plan matches the state before applying
+        run: tfctl apply --plan tfplan.binary

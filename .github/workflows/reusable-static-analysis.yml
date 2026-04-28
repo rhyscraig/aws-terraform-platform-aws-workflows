@@ -38,6 +38,6 @@ jobs:
         with:
           directory: ${{ inputs.tf_dir }}
           framework: terraform
-          soft_fail: true
+          soft_fail: false
           quiet: true
           skip_check: CKV_AWS_144,CKV_AWS_145

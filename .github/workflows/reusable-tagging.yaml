@@ -21,32 +21,51 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
 
-      - name: Calculate SemVer
+      - name: Calculate SemVer from conventional commits
         id: semver
         run: |
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "Latest Tag: $LAST_TAG"
+          echo "Latest tag: $LAST_TAG"
 
-          # Strip 'v' and split into array
           VERSION=${LAST_TAG#v}
           IFS='.' read -ra ADDR <<< "$VERSION"
-          MAJOR=${ADDR[0]}
-          MINOR=${ADDR[1]}
-          PATCH=${ADDR[2]}
+          MAJOR=${ADDR[0]:-0}
+          MINOR=${ADDR[1]:-0}
+          PATCH=${ADDR[2]:-0}
 
-          # Default to PATCH increment
-          NEW_PATCH=$((PATCH + 1))
-          NEW_TAG="v$MAJOR.$MINOR.$NEW_PATCH"
+          # Analyse commits since last tag for conventional commit types.
+          # Breaking change (BREAKING CHANGE footer or ! suffix) → major bump.
+          # feat: → minor bump.
+          # fix:/chore:/docs:/refactor:/perf:/test:/ci: → patch bump.
+          COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"%s%n%b" 2>/dev/null || git log --pretty=format:"%s%n%b")
 
-          echo "New Tag: $NEW_TAG"
-          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          BUMP="patch"
+          while IFS= read -r line; do
+            if echo "$line" | grep -qiE "BREAKING CHANGE|^[a-z]+(\(.+\))?!:"; then
+              BUMP="major"
+              break
+            elif echo "$line" | grep -qiE "^feat(\(.+\))?:"; then
+              BUMP="minor"
+            fi
+          done <<< "$COMMITS"
+
+          echo "Bump type: $BUMP"
+
+          case "$BUMP" in
+            major) NEW_TAG="v$((MAJOR + 1)).0.0" ;;
+            minor) NEW_TAG="v${MAJOR}.$((MINOR + 1)).0" ;;
+            patch) NEW_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+          esac
+
+          echo "New tag: $NEW_TAG"
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Push Tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ steps.semver.outputs.new_tag }}
-          git push origin ${{ steps.semver.outputs.new_tag }}
+          git tag "${{ steps.semver.outputs.new_tag }}"
+          git push origin "${{ steps.semver.outputs.new_tag }}"
 
       - name: Create Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v0.1.15

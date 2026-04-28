@@ -87,11 +87,11 @@ jobs:
         run: |
           # -detailed-exitcode: 0=no changes, 1=error, 2=changes detected (drift)
           EXTRA_VARS=""
-          if [ -f "configs/orgs/${{ inputs.org }}.tfvars" ]; then
-            EXTRA_VARS="${EXTRA_VARS} -var-file=../../configs/orgs/${{ inputs.org }}.tfvars"
+          if [ -f "${GITHUB_WORKSPACE}/configs/orgs/${{ inputs.org }}.tfvars" ]; then
+            EXTRA_VARS="${EXTRA_VARS} -var-file=${GITHUB_WORKSPACE}/configs/orgs/${{ inputs.org }}.tfvars"
           fi
-          if [ -f "configs/envs/${{ inputs.env }}.tfvars" ]; then
-            EXTRA_VARS="${EXTRA_VARS} -var-file=../../configs/envs/${{ inputs.env }}.tfvars"
+          if [ -f "${GITHUB_WORKSPACE}/configs/envs/${{ inputs.env }}.tfvars" ]; then
+            EXTRA_VARS="${EXTRA_VARS} -var-file=${GITHUB_WORKSPACE}/configs/envs/${{ inputs.env }}.tfvars"
           fi
 
           set +e

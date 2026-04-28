@@ -1,0 +1,71 @@
+name: "Reusable Drift Detection"
+
+on:
+  workflow_call:
+    inputs:
+      env_name:
+        required: true
+        type: string
+      aws_region:
+        required: false
+        default: "eu-west-2"
+        type: string
+    secrets:
+      OIDC_ROLE_ARN:
+        required: true
+      GH_PAT:
+        required: true
+
+jobs:
+  drift-check:
+    name: Detect Drift
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      actions: none
+      checks: none
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.1.0
+        with:
+          python-version: '3.11'
+
+      - name: Install tfctl
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          pip install --upgrade pip
+          pip install "git+https://${GH_TOKEN}@github.com/rhyscraig/tfctl.git@v2.2.0"
+
+      - name: Run Drift Check
+        env:
+          CI: "true"
+        run: |
+          # tfctl passes '-detailed-exitcode' to terraform.
+          # Exit Code 2 indicates changes (drift).
+          # Exit Code 0 indicates no changes.
+          # Exit Code 1 indicates error.
+
+          set +e
+          tfctl --env=${{ inputs.env_name }} plan -detailed-exitcode
+          EXIT_CODE=$?
+          set -e
+
+          if [ $EXIT_CODE -eq 2 ]; then
+            echo "::error::DRIFT DETECTED! Infrastructure does not match Code."
+            exit 1
+          elif [ $EXIT_CODE -ne 0 ]; then
+            echo "::error::Plan failed execution."
+            exit 1
+          fi
+          echo "✅ No drift detected."
